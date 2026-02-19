@@ -1,0 +1,46 @@
+name: Build and push image to ACR
+
+on:
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Create .env from the ENV secret at build time, but do not commit it.
+      # We'll delete it right after the build as a defense-in-depth measure.
+      - name: Create build-time .env from secret
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s' "${{ secrets.ENV }}" > src/.env
+
+      - name: Log in to ACR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.ACR_LOGIN_SERVER }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      - name: Build and push (context is src/ only)
+        uses: docker/build-push-action@v6
+        with:
+          context: ./src
+          file: ./src/Dockerfile
+          push: true
+          tags: |
+            ${{ secrets.ACR_LOGIN_SERVER }}/${{ secrets.IMAGE_NAME }}:latest
+            ${{ secrets.ACR_LOGIN_SERVER }}/${{ secrets.IMAGE_NAME }}:${{ github.sha }}
+
+      - name: Remove .env from runner workspace
+        if: always()
+        shell: bash
+        run: rm -f src/.env
