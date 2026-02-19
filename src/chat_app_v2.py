@@ -11,14 +11,14 @@ import orjson  # Faster JSON library
 from dotenv import load_dotenv
 from opentelemetry import trace
 import logging
-from opentelemetry.instrumentation.openai_v2 import OpenAIInstrumentor
+# from opentelemetry.instrumentation.openai_v2 import OpenAIInstrumentor
 
 # Azure & OpenAI Imports
 from azure.ai.projects import AIProjectClient
 from azure.identity import DefaultAzureCredential
 from openai import AzureOpenAI
-from azure.monitor.opentelemetry import configure_azure_monitor
-from azure.ai.agents.telemetry import trace_function
+# from azure.monitor.opentelemetry import configure_azure_monitor
+# from azure.ai.agents.telemetry import trace_function
 
 # FastAPI Imports
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -48,7 +48,7 @@ from app.tools.imageCreationTool import create_image
 from app.servers.mcp_inventory_server import mcp as inventory_mcp
 from services.handoff_service import HandoffService
 
-
+# Load environment variables from .env file
 load_dotenv()
 env_vars = load_env_vars()
 validated_env_vars = validate_env_vars(env_vars)
@@ -63,12 +63,16 @@ logger = logging.getLogger(__name__)
 # Global thread pool executor for CPU-bound operations
 thread_pool = ThreadPoolExecutor(max_workers=4)
 
-application_insights_connection_string = os.environ["APPLICATIONINSIGHTS_CONNECTION_STRING"]
-configure_azure_monitor(connection_string=application_insights_connection_string)
-OpenAIInstrumentor().instrument()
+# application_insights_connection_string = os.environ["APPLICATIONINSIGHTS_CONNECTION_STRING"]
+# configure_azure_monitor(connection_string=application_insights_connection_string)
+# OpenAIInstrumentor().instrument()
 
 scenario = os.path.basename(__file__)
 tracer = trace.get_tracer(__name__)
+
+#####################
+#  Image functions  #
+#####################
 
 async def get_cached_image_description(image_url: str, image_cache: dict) -> str:
     """Get image description with caching. If not in cache, fetch and store it."""
@@ -112,8 +116,13 @@ async def safe_operation(operation, fallback_value=None, operation_name="Unknown
         logger.error(f"Unexpected error in {operation_name}: {e}", exc_info=True)
         return fallback_value
 
+#####################
+#      FastAPI      #
+#####################
+
 app = FastAPI()
-#set up MCP inventory server as a mounted app
+
+# Set up MCP inventory server as a mounted app
 inventory_mcp_app = inventory_mcp.sse_app()
 app.mount("/mcp-inventory/", inventory_mcp_app)
 project_endpoint = os.environ.get("FOUNDRY_ENDPOINT")
@@ -129,7 +138,6 @@ project_client = AIProjectClient(
 # Handoff service determines which agent to route to based on intent classification.
 # The default for this is Cora, the general shopping assistant.
 llm_client = project_client.get_openai_client()
-
 handoff_service = HandoffService(
     azure_openai_client=llm_client,
     deployment_name=validated_env_vars['gpt_deployment'],
@@ -137,12 +145,15 @@ handoff_service = HandoffService(
     lazy_classification=True
 )
 
+# The root endpoint opens up the chat interface (chat.html) where users can interact with the chatbot.
+# This serves the frontend of the application.
 @app.get("/")
 async def get():
     chat_html_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'chat.html')
     with open(chat_html_path, "r", encoding="utf-8") as f:
         return HTMLResponse(f.read())
 
+# Health endpoint returns the state of the env variables and a timestamp, useful for monitoring the app's health in Azure Web App
 @app.get("/health")
 async def health_check():
     """Health check endpoint for Azure Web App."""
@@ -158,6 +169,8 @@ async def health_check():
         }
     }
 
+# Websocket endpoint for real-time chat communication.
+# Handles incoming messages, manages session state, and sends responses back to the client. Implements a multi-agent architecture with context enrichment, error handling,
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     session_start_time = time.time()
@@ -245,9 +258,10 @@ async def websocket_endpoint(websocket: WebSocket):
             
             chat_history = parse_conversation_history(conversation_history, chat_history, user_message)
             
+            # Hard coded response with agents disabled
             # await websocket.send_text(fast_json_dumps({"answer": "This application is not yet ready to serve results. Please check back later.", "agent": None, "cart": persistent_cart}))
 
-            # # Single-agent example
+            # # Single-agent example in app/tools/singleAgentExample.py
             # try:
             #     response = generate_response(user_message)
             #     await websocket.send_text(fast_json_dumps({"answer": response, "agent": "single", "cart": persistent_cart}))
